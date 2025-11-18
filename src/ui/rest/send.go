@@ -30,7 +30,7 @@ type UnifiedSendRequest struct {
 }
 
 type UnifiedSendResponse struct {
-	ReferenceID string `json:"ref_message_id"`
+	ReferenceID string `json:"refMessageId"`
 }
 
 func InitRestSend(app fiber.Router, service domainSend.ISendUsecase) Send {

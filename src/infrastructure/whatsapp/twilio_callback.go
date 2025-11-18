@@ -14,6 +14,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainChatStorage "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/chatstorage"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/middleware"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
@@ -39,6 +40,7 @@ type TwilioMessage struct {
 	Longitude        string `json:"Longitude,omitempty"`
 	Address          string `json:"Address,omitempty"`
 	MediaContentType string `json:"MediaContentType,omitempty"`
+	CompanyNid       string `json:"CompanyNid,omitempty"`
 }
 
 func forwardTwilioCallback(ctx context.Context, evt *events.Message, chatStorageRepo domainChatStorage.IChatStorageRepository) error {
@@ -47,7 +49,7 @@ func forwardTwilioCallback(ctx context.Context, evt *events.Message, chatStorage
 		return nil
 	}
 
-	payload := buildTwilioPayload(evt, chatStorageRepo)
+	payload := buildTwilioPayload(ctx, evt, chatStorageRepo)
 	if payload == nil {
 		return nil
 	}
@@ -82,7 +84,7 @@ func forwardTwilioCallback(ctx context.Context, evt *events.Message, chatStorage
 	return nil
 }
 
-func buildTwilioPayload(evt *events.Message, chatStorageRepo domainChatStorage.IChatStorageRepository) *TwilioMessage {
+func buildTwilioPayload(ctx context.Context, evt *events.Message, chatStorageRepo domainChatStorage.IChatStorageRepository) *TwilioMessage {
 	senderNumber := sanitizeJIDToNumber(evt.Info.Sender)
 	if senderNumber == "" {
 		senderNumber = sanitizeJIDToNumber(evt.Info.Chat)
@@ -114,6 +116,7 @@ func buildTwilioPayload(evt *events.Message, chatStorageRepo domainChatStorage.I
 		MessageSID:    string(evt.Info.ID),
 		AccountSID:    config.TwilioAccountSID,
 		From:          formatWhatsAppAddress(senderNumber),
+		CompanyNid:    middleware.GetCompanyNidFromContext(ctx),
 	}
 
 	if evt.Info.IsGroup {

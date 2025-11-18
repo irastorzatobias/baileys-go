@@ -7,6 +7,7 @@ import (
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
 	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/middleware"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -19,14 +20,15 @@ type UnifiedSendOption struct {
 }
 
 type UnifiedSendRequest struct {
-	From      string              `json:"from"`
-	To        string              `json:"to"`
-	Message   string              `json:"message"`
-	Group     bool                `json:"group"`
-	MediaURL  *string             `json:"mediaUrl"`
-	MediaType *string             `json:"mediaType"`
-	MediaName *string             `json:"mediaName"`
-	Options   []UnifiedSendOption `json:"options"`
+	From       string              `json:"from"`
+	To         string              `json:"to"`
+	Message    string              `json:"message"`
+	Group      bool                `json:"group"`
+	MediaURL   *string             `json:"mediaUrl"`
+	MediaType  *string             `json:"mediaType"`
+	MediaName  *string             `json:"mediaName"`
+	Options    []UnifiedSendOption `json:"options"`
+	CompanyNid string              `json:"companyNid"`
 }
 
 type UnifiedSendResponse struct {
@@ -61,6 +63,11 @@ func (controller *Send) SendUnified(c *fiber.Ctx) error {
 		return fiber.NewError(fiber.StatusBadRequest, "from, to, and message are required")
 	}
 
+	// Extract companyNid from context if not provided in request
+	if req.CompanyNid == "" {
+		req.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	formattedMessage := req.Message
 	if len(req.Options) > 0 {
 		var opts []string
@@ -87,7 +94,7 @@ func (controller *Send) SendUnified(c *fiber.Ctx) error {
 		switch {
 		case strings.HasPrefix(mediaType, "image"):
 			imgReq := domainSend.ImageRequest{
-				BaseRequest: domainSend.BaseRequest{Phone: to},
+				BaseRequest: domainSend.BaseRequest{Phone: to, CompanyNid: req.CompanyNid},
 				Caption:     formattedMessage,
 				ImageURL:    req.MediaURL,
 			}
@@ -98,7 +105,7 @@ func (controller *Send) SendUnified(c *fiber.Ctx) error {
 			return c.JSON(UnifiedSendResponse{ReferenceID: res.MessageID})
 		case strings.HasPrefix(mediaType, "video"):
 			videoReq := domainSend.VideoRequest{
-				BaseRequest: domainSend.BaseRequest{Phone: to},
+				BaseRequest: domainSend.BaseRequest{Phone: to, CompanyNid: req.CompanyNid},
 				Caption:     formattedMessage,
 				VideoURL:    req.MediaURL,
 			}
@@ -114,7 +121,7 @@ func (controller *Send) SendUnified(c *fiber.Ctx) error {
 	}
 
 	msgReq := domainSend.MessageRequest{
-		BaseRequest: domainSend.BaseRequest{Phone: to},
+		BaseRequest: domainSend.BaseRequest{Phone: to, CompanyNid: req.CompanyNid},
 		Message:     formattedMessage,
 	}
 
@@ -145,6 +152,11 @@ func (controller *Send) SendText(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendText(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -170,6 +182,11 @@ func (controller *Send) SendImage(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendImage(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -191,6 +208,11 @@ func (controller *Send) SendFile(c *fiber.Ctx) error {
 
 	request.File = file
 	utils.SanitizePhone(&request.Phone)
+
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
 
 	response, err := controller.Service.SendFile(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -215,6 +237,11 @@ func (controller *Send) SendVideo(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendVideo(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -238,6 +265,11 @@ func (controller *Send) SendSticker(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendSticker(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -255,6 +287,11 @@ func (controller *Send) SendContact(c *fiber.Ctx) error {
 	utils.PanicIfNeeded(err)
 
 	utils.SanitizePhone(&request.Phone)
+
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
 
 	response, err := controller.Service.SendContact(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -274,6 +311,11 @@ func (controller *Send) SendLink(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendLink(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -291,6 +333,11 @@ func (controller *Send) SendLocation(c *fiber.Ctx) error {
 	utils.PanicIfNeeded(err)
 
 	utils.SanitizePhone(&request.Phone)
+
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
 
 	response, err := controller.Service.SendLocation(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -315,6 +362,11 @@ func (controller *Send) SendAudio(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendAudio(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -333,6 +385,11 @@ func (controller *Send) SendPoll(c *fiber.Ctx) error {
 
 	utils.SanitizePhone(&request.Phone)
 
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
+
 	response, err := controller.Service.SendPoll(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
 
@@ -348,6 +405,11 @@ func (controller *Send) SendPresence(c *fiber.Ctx) error {
 	var request domainSend.PresenceRequest
 	err := c.BodyParser(&request)
 	utils.PanicIfNeeded(err)
+
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
 
 	response, err := controller.Service.SendPresence(c.UserContext(), request)
 	utils.PanicIfNeeded(err)
@@ -366,6 +428,11 @@ func (controller *Send) SendChatPresence(c *fiber.Ctx) error {
 	utils.PanicIfNeeded(err)
 
 	utils.SanitizePhone(&request.Phone)
+
+	// Extract companyNid from context if not provided in request
+	if request.CompanyNid == "" {
+		request.CompanyNid = middleware.GetCompanyNidFromContext(c.UserContext())
+	}
 
 	response, err := controller.Service.SendChatPresence(c.UserContext(), request)
 	utils.PanicIfNeeded(err)

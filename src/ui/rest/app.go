@@ -7,6 +7,7 @@ import (
 	domainApp "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/app"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/infrastructure/whatsapp"
 	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/ui/rest/middleware"
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -27,7 +28,13 @@ func InitRestApp(app fiber.Router, service domainApp.IAppUsecase) App {
 }
 
 func (handler *App) Login(c *fiber.Ctx) error {
-	response, err := handler.Service.Login(c.UserContext())
+	companyNid := c.Query("companyNid")
+	ctx := c.UserContext()
+	if companyNid != "" {
+		ctx = middleware.SetCompanyNidInContext(ctx, companyNid)
+	}
+
+	response, err := handler.Service.Login(ctx)
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{
@@ -42,7 +49,13 @@ func (handler *App) Login(c *fiber.Ctx) error {
 }
 
 func (handler *App) LoginWithCode(c *fiber.Ctx) error {
-	pairCode, err := handler.Service.LoginWithCode(c.UserContext(), c.Query("phone"))
+	companyNid := c.Query("companyNid")
+	ctx := c.UserContext()
+	if companyNid != "" {
+		ctx = middleware.SetCompanyNidInContext(ctx, companyNid)
+	}
+
+	pairCode, err := handler.Service.LoginWithCode(ctx, c.Query("phone"))
 	utils.PanicIfNeeded(err)
 
 	return c.JSON(utils.ResponseData{

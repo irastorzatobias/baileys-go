@@ -29,7 +29,7 @@ var (
 	WhatsappWebhook                []string
 	WhatsappWebhookSecret                = "secret"
 	WhatsappLogLevel                     = "DEBUG"
-	WhatsappAPIEndpoint                  = "https://78e32f57a963.ngrok-free.app"
+	WhatsappAPIEndpoint                  = ""
 	TwilioAccountSID                     = "AC229b5af4184e6c1d98e05bd00a4aa0c2"
 	CompanyNID                           = 0
 	WhatsappSettingMaxImageSize    int64 = 20000000  // 20MB

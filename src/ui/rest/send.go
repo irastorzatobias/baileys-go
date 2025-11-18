@@ -1,0 +1,379 @@
+package rest
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/config"
+	domainSend "github.com/aldinokemal/go-whatsapp-web-multidevice/domains/send"
+	"github.com/aldinokemal/go-whatsapp-web-multidevice/pkg/utils"
+	"github.com/gofiber/fiber/v2"
+)
+
+type Send struct {
+	Service domainSend.ISendUsecase
+}
+
+type UnifiedSendOption struct {
+	Value string `json:"value"`
+}
+
+type UnifiedSendRequest struct {
+	From      string              `json:"from"`
+	To        string              `json:"to"`
+	Message   string              `json:"message"`
+	Group     bool                `json:"group"`
+	MediaURL  *string             `json:"mediaUrl"`
+	MediaType *string             `json:"mediaType"`
+	MediaName *string             `json:"mediaName"`
+	Options   []UnifiedSendOption `json:"options"`
+}
+
+type UnifiedSendResponse struct {
+	ReferenceID string `json:"ref_message_id"`
+}
+
+func InitRestSend(app fiber.Router, service domainSend.ISendUsecase) Send {
+	rest := Send{Service: service}
+	app.Post("/send", rest.SendUnified)
+	app.Post("/send/message", rest.SendText)
+	app.Post("/send/image", rest.SendImage)
+	app.Post("/send/file", rest.SendFile)
+	app.Post("/send/video", rest.SendVideo)
+	app.Post("/send/sticker", rest.SendSticker)
+	app.Post("/send/contact", rest.SendContact)
+	app.Post("/send/link", rest.SendLink)
+	app.Post("/send/location", rest.SendLocation)
+	app.Post("/send/audio", rest.SendAudio)
+	app.Post("/send/poll", rest.SendPoll)
+	app.Post("/send/presence", rest.SendPresence)
+	app.Post("/send/chat-presence", rest.SendChatPresence)
+	return rest
+}
+
+func (controller *Send) SendUnified(c *fiber.Ctx) error {
+	var req UnifiedSendRequest
+	if err := c.BodyParser(&req); err != nil {
+		return fiber.ErrBadRequest
+	}
+
+	if req.From == "" || req.To == "" || req.Message == "" {
+		return fiber.NewError(fiber.StatusBadRequest, "from, to, and message are required")
+	}
+
+	formattedMessage := req.Message
+	if len(req.Options) > 0 {
+		var opts []string
+		for idx, opt := range req.Options {
+			if opt.Value == "" {
+				continue
+			}
+			opts = append(opts, fmt.Sprintf("%d. %s", idx+1, opt.Value))
+		}
+		if len(opts) > 0 {
+			formattedMessage = fmt.Sprintf("%s\n\n%s", formattedMessage, strings.Join(opts, "\n"))
+		}
+	}
+
+	to := sanitizeUnifiedRecipient(req.To, req.Group)
+
+	// Route to media sender if media URL is provided, otherwise send text.
+	if req.MediaURL != nil && *req.MediaURL != "" {
+		mediaType := ""
+		if req.MediaType != nil {
+			mediaType = strings.ToLower(*req.MediaType)
+		}
+
+		switch {
+		case strings.HasPrefix(mediaType, "image"):
+			imgReq := domainSend.ImageRequest{
+				BaseRequest: domainSend.BaseRequest{Phone: to},
+				Caption:     formattedMessage,
+				ImageURL:    req.MediaURL,
+			}
+			res, err := controller.Service.SendImage(c.UserContext(), imgReq)
+			if err != nil {
+				return err
+			}
+			return c.JSON(UnifiedSendResponse{ReferenceID: res.MessageID})
+		case strings.HasPrefix(mediaType, "video"):
+			videoReq := domainSend.VideoRequest{
+				BaseRequest: domainSend.BaseRequest{Phone: to},
+				Caption:     formattedMessage,
+				VideoURL:    req.MediaURL,
+			}
+			res, err := controller.Service.SendVideo(c.UserContext(), videoReq)
+			if err != nil {
+				return err
+			}
+			return c.JSON(UnifiedSendResponse{ReferenceID: res.MessageID})
+		default:
+			// Fallback: append media URL to text content and send as plain message.
+			formattedMessage = fmt.Sprintf("%s\n%s", formattedMessage, *req.MediaURL)
+		}
+	}
+
+	msgReq := domainSend.MessageRequest{
+		BaseRequest: domainSend.BaseRequest{Phone: to},
+		Message:     formattedMessage,
+	}
+
+	res, err := controller.Service.SendText(c.UserContext(), msgReq)
+	if err != nil {
+		return err
+	}
+
+	return c.JSON(UnifiedSendResponse{ReferenceID: res.MessageID})
+}
+
+func sanitizeUnifiedRecipient(to string, isGroup bool) string {
+	clean := strings.TrimSpace(to)
+	if strings.Contains(clean, "@") {
+		return clean
+	}
+
+	if isGroup {
+		return clean + config.WhatsappTypeGroup
+	}
+	return clean + config.WhatsappTypeUser
+}
+
+func (controller *Send) SendText(c *fiber.Ctx) error {
+	var request domainSend.MessageRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendText(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendImage(c *fiber.Ctx) error {
+	var request domainSend.ImageRequest
+	request.Compress = true
+
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	file, err := c.FormFile("image")
+	if err == nil {
+		request.Image = file
+	}
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendImage(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendFile(c *fiber.Ctx) error {
+	var request domainSend.FileRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	file, err := c.FormFile("file")
+	utils.PanicIfNeeded(err)
+
+	request.File = file
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendFile(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendVideo(c *fiber.Ctx) error {
+	var request domainSend.VideoRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	// Try to get file but ignore error if not provided
+	if videoFile, errFile := c.FormFile("video"); errFile == nil {
+		request.Video = videoFile
+	}
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendVideo(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendSticker(c *fiber.Ctx) error {
+	var request domainSend.StickerRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	// Try to get file but ignore error if not provided
+	if stickerFile, errFile := c.FormFile("sticker"); errFile == nil {
+		request.Sticker = stickerFile
+	}
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendSticker(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendContact(c *fiber.Ctx) error {
+	var request domainSend.ContactRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendContact(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendLink(c *fiber.Ctx) error {
+	var request domainSend.LinkRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendLink(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendLocation(c *fiber.Ctx) error {
+	var request domainSend.LocationRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendLocation(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendAudio(c *fiber.Ctx) error {
+	var request domainSend.AudioRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	// Try to get file but ignore error if not provided
+	if audioFile, errFile := c.FormFile("audio"); errFile == nil {
+		request.Audio = audioFile
+	}
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendAudio(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendPoll(c *fiber.Ctx) error {
+	var request domainSend.PollRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendPoll(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendPresence(c *fiber.Ctx) error {
+	var request domainSend.PresenceRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	response, err := controller.Service.SendPresence(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
+
+func (controller *Send) SendChatPresence(c *fiber.Ctx) error {
+	var request domainSend.ChatPresenceRequest
+	err := c.BodyParser(&request)
+	utils.PanicIfNeeded(err)
+
+	utils.SanitizePhone(&request.Phone)
+
+	response, err := controller.Service.SendChatPresence(c.UserContext(), request)
+	utils.PanicIfNeeded(err)
+
+	return c.JSON(utils.ResponseData{
+		Status:  200,
+		Code:    "SUCCESS",
+		Message: response.Status,
+		Results: response,
+	})
+}
